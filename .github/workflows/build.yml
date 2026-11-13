@@ -1,0 +1,56 @@
+name: Build LaTeX PDFs
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    container:
+      image: texlive/texlive:latest
+      options: --user root
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compile all LaTeX files
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          for file in *.tex; do
+            echo "::group::Compiling ${file}"
+            latexmk -lualatex -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error \
+              -output-directory=output "${file}"
+            echo "::endgroup::"
+          done
+          echo "Compiled PDFs:"
+          ls -lh output/*.pdf
+
+      - name: Upload PDF artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdfs
+          path: output/*.pdf
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'Latest PDF build' }}
+          files: output/*.pdf
+          generate_release_notes: ${{ startsWith(github.ref, 'refs/tags/') }}
+          make_latest: true
